@@ -1,0 +1,64 @@
+---
+title: "Initial Notebook"
+output: html_notebook
+---
+
+Bash run:
+sudo apt-get install libcurl4-openssl-dev libssl-dev libxml2-dev
+
+Install dependencies
+```{r setup}
+install.packages("devtools")
+devtools::install_github("KrishnaTO/FAOSTATpackage")
+install.packages("https://github.com/KrishnaTO/FAOSTATpackage")
+
+```
+
+```{r}
+fao <- FAOsearch(full=T)
+
+```
+
+Specific datasets of interest:
+BC=3=crop_stock
+CC=5=crop_supply
+OA=48=crop_production
+QC=57=population
+TP=74=crop_trade
+
+```{r, "https://github.com/muuankarski/faobulk/blob/master/R/get_data.R"}
+get_data <- function(DatasetCode = "QP"){
+
+  datas <- fao
+  urli <- datas[datas$DatasetCode == DatasetCode,]$FileLocation
+  fly <- tempfile(fileext = ".zip")
+  download.file(url = urli, destfile = fly)
+  dat <- read_csv(fly)
+  names(dat) <- tolower(sub(" ", "_", names(dat)))
+  return(dat)
+}
+```
+
+```{r}
+# Download complete FAO zip: fenixservices.fao.org/faostat/static/bulkdownloads/FAOSTAT.zip
+
+# Specific tables
+population <- get_data("OA")[,c(2,4,6,8,9,10)]
+crop_stock <- get_data("BC")[,c(2,4,6,8,9,10)]
+crop_supply <- get_data("CC")[,c(2,4,6,8,9,10)]
+crop_production <- get_data("QC")[,c(2,4,6,8,9,10)]
+crop_trade <- get_data("TP")[,c(2,4,6,8,9,10)]
+```
+
+
+```{r}
+crop_total <- rbind(crop_production, crop_stock, crop_supply, crop_trade)
+rm(crop_production, crop_stock, crop_supply, crop_trade)
+crop_total <- crop_total[!crop_total$value==0,]
+crop_total <- crop_total[complete.cases(crop_total),]
+```
+
+```{r}
+write.csv(crop_total, "crop_total.csv")
+```
+
