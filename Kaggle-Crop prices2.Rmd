@@ -1,0 +1,44 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r setup, warning=F}
+library(tidyverse)
+library(data.table)
+library(lubridate)
+library(skimr)
+```
+
+
+```{r}
+wfp <- read_rds("wfp.rds")
+
+wfp$adm1_name <- NULL
+wfp$mp_commoditysource <- NULL
+wfp <- wfp %>% select(-contains("id")) 
+wfp <- wfp %>% mutate("Date" = dmy(paste("1", mp_month, mp_year, sep = "/"))) %>% select(-c(mp_year, mp_month))
+
+# skim(wfp)
+```
+
+```{r}
+unique(wfp$um_name)
+```
+um_name
+*KG
+**G
+**Pound
+*L
+**ML
+*Ea
+
+
+```{r}
+wfp %>% mutate(um_name = str_split(um_name, " ")) %>% unnest(um_name)
+unique(wfp) %>% select(um_name) %>% str_split()
+```
+
+```{r}
+wfp %>% filter(cm_name == "Bread")
+```
+

@@ -1,0 +1,72 @@
+---
+title: "Table column names"
+description: Get the names of the columns from each table within a table, taken from MySQL tables within the database 'wfp'.
+---
+
+<!-- Targets -->
+* Join tables per following traits
+    `Nutrition Requirements per populace per country`
+    [x]1.Nutrition = Nutrition per commodity
+    [x]2.Landuse   = Commodity quantity per arable land per country
+    [x]3.Trade     = Commodity exported/imported per country
+    [x]4.Products  = Commodity grown per country
+    [x]5.Currency  = Exchange prices per country
+    [x]6.Price     = Commodity prices per country
+                                      per market
+                     Living wages per person per country
+                                  per market
+* List names per dataset
+
+
+```{r, message=FALSE}
+library(DBI)
+library(tidyverse)
+con <- dbConnect(RMariaDB::MariaDB(), user = "mysql", password = "password", dbname = "wfp")
+# Get tables from 'wfp'
+tables <- data.frame(dbListTables(con), stringsAsFactors = F)
+fields <- list()
+# tables.fields <- tibble()
+for(i in c(1:length(tables$dbListTables.con.))){
+  fields <- rbind(fields, list(dbListFields(con, tables$dbListTables.con.[i])))
+  }
+dbDisconnect(con)
+table.fields <- tibble(); for(i in 1:12){
+  table.fields <- rbind(as.list(table.fields), list(c(tables[[1]][i], fields[[i]])))
+}
+rm(con, fields, tables, i)
+
+# Function is run twice as multiple required to meet matching lengths
+for(i in 1:12){
+  if(length(table.fields[[i]]) < 13){
+    table.fields[[i]] <- c(table.fields[[i]], NA)}}
+
+table.fields <- unname(data.frame(lapply(table.fields, unlist), stringsAsFactors = F))
+
+```
+
+```{r}
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+table.fields$common <- apply(table.fields, 1, Mode)
+table.fields[1,13] <- "Common"
+colnames(table.fields) <- table.fields[1,]
+table.fields <- table.fields[-1,]
+
+for(i in 1:12){
+  for(j in 1:12){
+    if(identical(table.fields[i,j],table.fields[i,"Common"])){
+      table.fields[i,j] <- NA
+    }
+  }
+}
+```
+
+```{r}
+con <- dbConnect(RMariaDB::MariaDB(), user = "mysql", password = "password", dbname = "wfp")
+
+
+dbDisconnect(con)
+```
+

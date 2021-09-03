@@ -1,0 +1,31 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r setup}
+library(tidyverse)
+corn_data <- read.csv("/home/agar/OneDrive/Documents/Library/Datasets/corn yield.csv")
+```
+
+Variables in this dataset: year, State, Materials_Type (Grain, Silage), Value 
+* Single value = Survey = "SURVEY", Geo Level = "State", Commodity, 
+* Missing value = Week Ending, State ANSI, Ag District, Ag District Code, County, County ANSI, Zip Code, Region, watershed_code, Watershed, 
+* Relevant variables = Year, Period, State, State ANSI, Data Item, Value
+
+```{r}
+corn <- corn_data %>% select(Year, Period, State, Data.Item, Value) %>% 
+    filter(Period == "YEAR") %>% 
+    filter(str_detect(Data.Item, "MEASURED")) %>%
+    select(-Period) %>%
+    mutate(Value = as.double(gsub(",", "", as.character(corn$Value)))) %>%
+    mutate(Data.Item = as.character(Data.Item))
+mat <- unique(corn$Data.Item)
+corn$Data.Item <- gsub(mat[1], "Grain", corn$Data.Item) 
+corn$Data.Item <- gsub(mat[2], "Silage", corn$Data.Item)
+```
+The idea is to visualize and compare the yield corn$Value with Material_Type per Year and State
+
+```{r}
+ggplot(aes(Year, Value, color = State), data = corn) + geom_smooth()
+```
+

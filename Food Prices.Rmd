@@ -1,0 +1,10 @@
+---
+title: "Food Prices"
+output: html_document
+---
+
+```{r}
+setwd("/home/agar/OneDrive/Documents/Library")
+read.csv("")
+
+```

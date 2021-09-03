@@ -1,0 +1,29 @@
+---
+title: "Yemen FAO"
+output: html_document
+---
+
+```{r}
+download.file("https://data.humdata.org/dataset/b2d14354-6a5e-49ea-a0e7-3a10419c360c/resource/b7aeff5c-24df-419f-8340-a3793552b8db/download/food-security_249.csv", "yemen")
+yemen <- read.csv("yemen", header = T, stringsAsFactors = F)
+x <- matrix(names(yemen)); y <- matrix(yemen[1,])
+yemen_head <- data.frame(as.vector(x), as.vector(y))
+yemen <- yemen[2:289,]
+yem_fld_uni <- data.frame()
+
+for(i in c(1:14)){
+  if(length(unique(yemen[,i]))<10) {
+    yemen[,i] <- as.factor(yemen[,i])
+    yem_fld_uni <- rbind(yem_fld_uni, names(yemen[,i]))
+  }
+}
+yemen_items <- data.frame(unique(yemen[,c("Item.Code","Item")]))
+yemen2 <- select(yemen, Item.Code, Item, StartYear, EndYear, Unit, Value)
+yemen3 <- yemen2[yemen2$Item.Code == "210041", c("Item.Code", "Item", "EndYear", "Unit", "Value")]
+
+plot(yemen3$EndYear, yemen3$Value)
+
+head(yemen3)
+View(yemen3)
+
+```

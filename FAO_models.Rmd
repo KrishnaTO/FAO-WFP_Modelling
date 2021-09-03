@@ -1,0 +1,100 @@
+---
+title: "wfp-clean"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readr)
+library(broom)
+```
+
+```{r}
+devtools::load_all("/home/agar2/Documents/FAOSTATpackage/FAOSTAT")
+fao <- FAOsearch(full=T)
+```
+3,5,48,57,74
+
+BC=3=crop_stock
+CC=5=crop_supply
+OA=48=crop_production
+QC=57=population
+TP=74=crop_trade
+
+```{r, "https://github.com/muuankarski/faobulk/blob/master/R/get_data.R"}
+get_data <- function(DatasetCode = "QP"){
+
+  datas <- fao
+  urli <- datas[datas$DatasetCode == DatasetCode,]$FileLocation
+  fly <- tempfile(fileext = ".zip")
+  download.file(url = urli, destfile = fly)
+  dat <- read_csv(fly)
+  names(dat) <- tolower(sub(" ", "_", names(dat)))
+  return(dat)
+}
+```
+
+```{r}
+population <- get_data("OA")[,c(2,4,6,8,9,10)]
+
+crop_stock <- get_data("BC")[,c(2,4,6,8,9,10)]
+crop_supply <- get_data("CC")[,c(2,4,6,8,9,10)]
+crop_production <- get_data("QC")[,c(2,4,6,8,9,10)]
+crop_trade <- get_data("TP")[,c(2,4,6,8,9,10)]
+```
+
+
+```{r}
+crop_total <- rbind(crop_production, crop_stock, crop_supply, crop_trade)
+rm(crop_production, crop_stock, crop_supply, crop_trade)
+crop_total <- crop_total[!crop_total$value==0,]
+crop_total <- crop_total[complete.cases(crop_total),]
+write.csv(crop_total, "crop_total.csv")
+```
+
+```{r}
+crop_total <- read_csv("crop_total.csv", )
+crop_total <- crop_total[,-1]
+crop_unique <- apply(crop_total[,c(1:5)], 2, unique)
+```
+
+# Create nested models - element, area, item: year vs (value == unit)
+```{r}
+# Create nested tibble
+crop_production <- crop_total %>% filter(element == "Production") %>% select(-element) %>% group_by(area, item, unit) %>% nest()
+# Create model and Add coefficient from models
+crop_model <- crop_production[c(1:10),] %>% mutate(models = lapply(data, function(df) lm(value ~ year, data = df))) %>% mutate(coef=unlist(map(models, coef))['year'])
+
+
+top <- crop_production$item %>% table() %>% sort(decreasing = T)
+barplot(top[top > 240])
+
+crop_model_fruit <- crop_production %>% filter(item == "Fruit Primary") %>% mutate(models = lapply(data, function(df) lm(value ~ year, data = df))) %>% mutate(coef=unlist(map(models, coef))['year']) %>% arrange(desc(coef))
+
+crop_production %>% filter(item == "Fruit Primary") %>% unnest() %>% pivot_wider(names_from = year, values_from = value)
+
+crop_production %>% filter(item == "Fruit Primary") %>% unnest() %>% ggplot(aes(year, value, colour = area)) + geom_line() 
+
+
+# plot growth rate vs year of country per filter(item) 
+crop_model_fruit$data[[1]]
+plot(data.frame(crop_model_fruit$data[[1]]$year, crop_model_fruit$data[[1]]$value / min(crop_model_fruit$data[[1]]$value)))
+data.frame(crop_model_fruit$data[[1]]$year, crop_model_fruit$data[[1]]$value / min(crop_model_fruit$data[[1]]$value))
+
+plot(data.frame(crop_model_fruit$data[[1]]$year, scale(crop_model_fruit$data[[1]]$value)))
+
+scale(crop_model_fruit$data[[1]]$value)
+
+
+```
+Create shiny dashboard
+
+    
+
+```{r}
+# Extracted coefficient
+data.frame(crop_model, "coef"= unlist(unname(as.data.frame(map(crop_model$models, coef))['year',])))
+
+```
+

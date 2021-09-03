@@ -1,0 +1,44 @@
+---
+title: "Agricultural Affordability"
+output: html_notebook
+---
+
+## THIS NOTEBOOK IS OBSELETE. 
+### SEE Database_regen.rmd FOR UPDATED
+
+Connect wfp$commodity to nutrition value per item
+
+Nutrition Export per Country
+Connect export quantity of groupby(wfp, country, item)
+
+---
+
+`Nutrition Requirements per populace per country`
+[x]Nutrition = Nutrition per commodity
+[x]Landuse   = Commodity quantity per arable land per country
+[x]Trade     = Commodity exported/imported per country
+[x]Products  = Commodity grown per country
+[x]Currency  = Exchange prices per country
+[x]Price     = Commodity prices per country
+                                per market
+               Living wages per person per country
+                            per market
+                         
+---
+
+<!-- Land use census -->
+
+Land output <- `Arable land` * `Crop grown` - `Disaster`
+  critical = `Crop grown per year`
+  
+$Available nutrition = ((Crop grown * Market value + Import - Export) * Nutrition value) / (population * Living wage)$
+
+Prediction values per year = (Available nutrition / Year) * (Available Year * Confidence level if data available)
+
+```{r}
+# wfp <- as_tibble(read_rds("/home/agar/Documents/WFP/Dataset/WFP"))
+
+library(tidyverse)
+library(XML)
+
+```

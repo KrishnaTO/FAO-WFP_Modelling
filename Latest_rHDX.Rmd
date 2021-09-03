@@ -1,0 +1,19 @@
+---
+title: "rHDX"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(rhdx)
+library(tidyverse)
+set_rhdx_config(hdx_site = "prod")
+```
+
+Download and read hdx dataset into R
+```{r}
+wfp <- pull_dataset("wfp-food-prices") %>% 
+  get_resource(index = 1) %>% 
+  read_resource(wfp, folder = getwd())
+
+write_rds(wfp, paste(getwd(), "/WFP/wfp.rds", sep = ""))
+```

@@ -1,0 +1,90 @@
+---
+title: "Database regeneration to MySQL"
+description: Download wfp datasets from FAOSTAT repo. Choosing the relevant datasets, upload the latest tables to MySQL database 'wfp' while removing old tables without checking if latest. 
+---
+
+In order to update internal database, run the following to download selected datasets from FAO and parse upload, via replacement, into the MySQL database 'wfp', based on the dataset file names.
+
+Further joining can be via SQL Join statements between datasets, or via R import and ETL. 
+
+```{r, download_datasets}
+install.packages("XML")
+install.packages("DBI")
+install.packages("tidyverse")
+library(XML)
+library(DBI)
+library(RMariaDB)
+library(tidyverse)
+
+# Get list of wfp datasets; to be accessible via library soon (project FAOSTAT_2 <TBCreated>)
+wfp_identifier <- xmlToDataFrame(
+                    xmlParse(
+                      "http://fenixservices.fao.org/faostat/static/bulkdownloads/datasets_E.xml"), 
+                    stringsAsFactors = F)
+
+# Interested datasets from FAO
+wfp_identifier.relevant <- wfp_identifier[c(3,5,8,20,21,46,48,52,57:62,72:74),]
+
+#Download chosen files within wfp_identifier.relevant
+lapply(wfp_identifier.relevant$FileLocation, download_faostat_bulk, "Dataset/FAOSTAT/")
+
+#Retrieve all data files only
+csv_list <- list.files("Dataset/FAOSTAT", recursive = T)
+csv_list <- csv_list[grep("Normalized[)].csv", csv_list)]
+
+csv_list.names <- strsplit(csv_list, "_E_All_Data_[(]Normalized")
+csv_list.names <- unlist(lapply(csv_list.names, dplyr::first))
+
+con <- DBI::dbConnect(RMariaDB::MariaDB(), user = "root", password = "password", dbname = "wfp")
+setwd("/home/agar/Documents/WFP/Dataset/FAOSTAT/"); for (i in 1:12) {
+  dbWriteTable(con, 
+               csv_list.names[i],
+               overwrite = T,
+               read.table(csv_list[i], 
+                          encoding = "utf8mb4", 
+                          sep = ",", 
+                          header = T))
+  
+  print(paste("Table", i, "finished"))
+}
+dbDisconnect(con)
+```
+
+```{r}
+# Test existing tables
+con <- DBI::dbConnect(RMariaDB::MariaDB(), user = "root", password = "password", dbname = "wfp")
+dbListTables(con)
+tbl(con, csv_list.names[11])
+dbDisconnect(con)
+```
+
+create table ConsumerPriceIndices('Area Code' INT PRIMARY KEY, 'Area' VARCHAR(255), 'Item Code' INT, 'Item' CHAR(100), 'Months Code' INT, 'Months' CHAR(10), 'Year Code' INT, 'Year' INT, 'Unit' BOOLEAN, 'Value' DECIMAL(P,10), 'Flag' CHAR(5), 'Note' VARCHAR(55));
+
+* Connect wfp$commodity to nutrition value per item
+
+Nutrition Export per Country
+Connect export quantity of groupby(wfp, country, item)
+
+---
+
+<!-- Land use census -->
+
+Land output <- `Arable land` * `Crop grown` - `Disaster`
+  critical = `Crop grown per year`
+  
+$Available nutrition = ((Crop grown * Market value + Import - Export) * Nutrition value) / (population * Living wage)$
+
+Prediction values per year = (Available nutrition / Year) * (Available Year * Confidence level if data available)
+
+---
+
+`Nutrition Requirements per populace per country`
+[x]1.Nutrition = Nutrition per commodity
+[x]2.Landuse   = Commodity quantity per arable land per country
+[x]3.Trade     = Commodity exported/imported per country
+[x]4.Products  = Commodity grown per country
+[x]5.Currency  = Exchange prices per country
+[x]6.Price     = Commodity prices per country
+                                per market
+                 Living wages per person per country
+                            per market

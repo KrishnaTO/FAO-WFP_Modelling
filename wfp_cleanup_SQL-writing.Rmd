@@ -1,0 +1,259 @@
+---
+title: "WFP ETL - Old"
+description: Initial level WFP ETL. Issues include - 
+                dataset download from hdx repo instead of FAO, 
+                changed column names to local personalized names which are no longer matchable with other tables,
+                drops columns with id levels, 
+                dates are changed to lubridate attributes, 
+                limited to saving rds file and not creating MySQL table.
+---
+
+Download latest WFP dataset
+
+```{r, include=FALSE}
+library(rhdx)
+library(tidyverse)
+set_rhdx_config(hdx_site = "prod")
+```
+
+Download and read hdx dataset into R
+```{r}
+wfp <- pull_dataset("wfp-food-prices") %>% 
+  get_resource(index = 1) %>% 
+  read_resource(wfp, folder = getwd())
+```
+
+```{r, wfp_ETL}
+wfp <- wfp %>% select("adm0_name","adm1_name","mkt_name","cm_name","cur_name","pt_name","um_name","mp_month","mp_year","mp_price")
+names(wfp) <- c("country", "state", "market", "commodity", "currency", "partner", "unit", "month", "year", "price")
+wfp$time <- lubridate::period(years = wfp$year, months = as.numeric(wfp$month))
+wfp$month <- NULL
+wfp$year <- NULL
+wfp$price <- as.numeric(wfp$price)
+```
+
+Create `Currency` multiplier 
+Create `Units` multiplier, then NLP
+
+#Multipliers 
+#Time wfp$time to curr$date for month-year along with 
+#Currency name matching (colnames(curr)) with wfp$currency
+
+Up-to-date currency conversion table can be found via HDX-https://data.humdata.org/dataset/ecb-fx-rates
+
+```{r, Get_currency_table}
+# Currently only 32 currencies available via this dataset
+
+# pull_dataset("ecb-fx-rates") %>%
+# get_resource(index = 1) %>%
+# download_resource(folder = "/home/agar/Documents/WFP")
+# curr_table <- read_csv("/home/agar/Documents/WFP/ECB_FX_USD-quote.csv", col_names = F)
+# curr_table <- curr_table[-2,]
+```
+
+
+```{r, currency multiplier}
+curr <- data.frame(
+          t(
+            read_csv("~/Documents/WFP/Dataset/Currency/Currency data.csv", col_names = FALSE, skip = 1)), stringsAsFactors = F)
+
+curr$X1 <- as.character(unlist(data.frame(strsplit(curr$X1, "[.]"))[3,]))
+curr$X3 <- NULL
+curr$X4 <- NULL
+
+rownames(curr) <- c("date", curr[c(2:41),1])
+curr$X1 <- NULL
+curr$X2 <- NULL
+curr <- data.frame(t(curr), stringsAsFactors = F)
+
+#Convert 2020Jan to lubridate::period using year and month
+date_curr <- data.frame(
+  "month" = unlist(data.frame(lapply(curr$date, strsplit, "[[:digit:]]"))[5,]), 
+  "year" = unlist(data.frame(lapply(curr$date, strsplit, "[[:alpha:]]"))[1,]) 
+  )
+date_curr$month <- match(as.character(date_curr$month), month.abb)
+date_curr$year <- as.numeric(as.character(date_curr$year))
+curr$date <- lubridate::period(years = date_curr$year, months = date_curr$month)
+rm(date_curr)
+curr <- pivot_longer(curr, -"date")
+curr <- curr[complete.cases(curr),]
+#Created currency list multiplier by date and currency
+```
+
+# Convert units via multiplier
+
+```{r, unit}
+unit <- sort(unique(wfp$unit))
+unit2 <- sort(unique(wfp$unit)) %>% 
+  strsplit(c(" ")) %>%  
+  as.data.frame()
+# Issue of 1x (non-numerical) units with spaces appear, although "cubic meter" is the only observed case
+# Issue2 of 1x (non-numerical) units with "/" appear, with additional number
+unit2[] <- lapply(unit2, as.character)
+unit2 <- as.data.frame(t(unit2), stringsAsFactors = F)
+unit <- data_frame("main" = unit, "multi" = unit2$V1, "unit" = unit2$V2)
+rm(unit2)
+# Add 1x to no numerical multipliers
+unit[grepl("[a-zA-z]", unit$multi), "multi"] <- 1
+```
+
+```{r}
+# Determine from unit$unit[i] >= unique(wfp$unit) == unit$unit[i]
+# Number of different commodidities per unit$main
+for(i in c(1:length(unit$main))){
+    unit[i,"comm_num"] <- length(unique(wfp$commodity[unit$main[i] == wfp$unit]))
+}
+unit$multi <- as.numeric(unit$multi)
+
+```
+
+*LCU=Local Currency Unit
+**Marmite=2.7kg
+***MT=1000kg
+****Libra(Pound)=0.45359237kg
+*****Cuartilla=2.875575kg
+
+# Modify unit$multi and unit$unit per below:
+KG <- KG, Pounds, G, Pound, LCU/3.5kg, Marmite**, MT*** , Libra**** , Cuartilla*****
+  Pounds, Pound, Libra**** = 0.45359237kg
+  G = 0.001kg
+  LCU/3.5kg = 3.5kg
+  Marmite** = 2.7kg
+  MT*** = 1000kg 
+  Cuartilla***** = 2.875575kg
+L <- L, ML, Gallon
+  ML = 0.001L
+  Gallon = 3.78541L
+pcs <- pcs, Tubers, Bar, Brush, Bunch, Course, Cylinder, Dozen, Head, Loaf, Package, Packet, Sack, Unit
+  Dozen = 12 pcs
+Currency_exchange <- USD/LCU
+special <- Day, kWh, Month, meter
+  month = 30.42Day
+  
+
+```{r, unit multiplier table}
+
+#run 1st level multiplier for kg, L, pcs, etc
+# KG <- Pounds, G, Pound, LCU/3.5kg, Marmite**, MT*** , Libra**** , Cuartilla*****
+#   Pounds, Pound, Libra**** = 0.45359237kg
+#   G = 0.001kg
+#   LCU/3.5kg = 3.5kg
+#   Marmite** = 2.7kg
+#   MT*** = 1000kg 
+#   Cuartilla***** = 2.875575kg
+
+for(i in c(1:length(unit$main))){
+  if(any(unit$unit[i]==c("Pounds","Pound","Libra"))){
+    unit$multi[i] <- unit$multi[i]*0.45359237
+  } 
+  if(unit$unit[i]=="LCU/3.5kg"){
+    unit$multi[i] <- unit$multi[i]*3.5
+  }
+  if(unit$unit[i]=="G"){
+    unit$multi[i] <- unit$multi[i]*0.001
+  }
+  if(unit$unit[i]=="Marmite"){
+    unit$multi[i] <- unit$multi[i]*2.7
+  }  
+  if(unit$unit[i]=="MT"){
+    unit$multi[i] <- unit$multi[i]*1000
+  }  
+  if(unit$unit[i]=="Cuartilla"){
+    unit$multi[i] <- unit$multi[i]*2.875575
+  }
+# L <- L, ML, Gallon
+#   ML = 0.001L
+#   Gallon = 3.78541L
+  if(unit$unit[i]=="ML"){
+    unit$multi[i] <- unit$multi[i]*0.001
+  }
+  if(unit$unit[i]=="Gallon"){
+    unit$multi[i] <- unit$multi[i]*3.78541
+  }
+# pcs <- pcs, Tubers, Bar, Brush, Bunch, Course, Cylinder, Dozen, Head, Loaf, Package, Packet, Sack, Unit
+#   Dozen = 12 pcs
+  if(unit$unit[i]=="Dozen"){
+    unit$multi[i] <- unit$multi[i]*12
+  }
+# special <- Day, kWh, Month, meter
+#   month = 30.42Day (avg per year)
+  if(unit$unit[i]=="Month"){
+    unit$multi[i] <- unit$multi[i]*30.42
+  }  
+}  
+for(i in c(1:length(unit$main))){
+  if(any(unit$unit[i]==c("Pounds", "G", "Pound", "LCU/3.5kg", "Marmite", "MT", "Libra", "Cuartilla"))){
+    unit$unit[i] <- "KG"
+   }
+  if(any(unit$unit[i]==c("ML", "Gallon"))){
+    unit$unit[i] <- "L"
+   }
+  if(any(unit$unit[i]==c("Tubers", "Bar", "Brush", "Bunch", "Course", "Cylinder", "Dozen", "Head", "Loaf", "Package", "Packet", "Sack", "Unit"))){
+    unit$unit[i] <- "pcs"
+   }
+  if(any(unit$unit[i]=="Month")){
+    unit$unit[i] <- "Day"
+   }
+}
+```
+
+<!-- Sub for price_multiplier unit$multi to wfp$price per wfp$unit -->
+<!-- Sub for unit_multiplier unit$unit to wfp$unit -->
+
+```{r}
+for(i in c(1:length(unit$unit))){
+  wfp$price <- gsub(unit$main[i], unit$multi[i], wfp$price)
+  wfp$unit <- gsub(unit$main[i], unit$unit[i], wfp$unit)
+}
+wfp$unit <- gsub("1KG", "KG", wfp$unit)
+wfp$price <- as.numeric(wfp$price)
+rm(unit)
+```
+
+```{r}
+# write_rds(wfp, "/home/agar/Documents/WFP/WFP")
+# wfp <- as_tibble(read_rds("/home/agar/Documents/WFP/WFP"))
+```
+
+Convert currency units into wfp
+```{r}
+# x <- c(unique(curr$name), 
+#        unique(wfp$currency))
+# sort(unname(unlist(unique(curr_table[1,-1]))))
+# sort(unique(x))
+```
+
+wfp$commodity 
+```{r}
+# split <- gsub(" - Retail", "", wfp$commodity) 
+# split <- gsub(" - Wholesale", "", split) %>% 
+#   unique() %>%  unlist()
+# split <- gsub("[)]", "", split) 
+# split <- strsplit(split, "[(]")
+# split <- t(as.data.frame(split, stringsAsFactors = F, col.names = 1:236, row.names = c("commodity", "comment")))
+# for(i in c(1:length(split[,1]))){
+#   if(split[i,1]==split[i,2]){
+#     split[i,2] <- NA
+#     }
+# }
+# split <- data.frame(split, stringsAsFactors = F)
+```
+
+```{r}
+wfp$commodity <- gsub(" - Retail", "", wfp$commodity) 
+wfp$commodity <- gsub(" - Wholesale", "", wfp$commodity)
+
+wfp$commodity <- gsub("[)]", "", wfp$commodity) 
+wfp <- wfp %>% separate(commodity, c("commodity", "commodity_2"), "[(]")
+wfp$commodity <- trimws(wfp$commodity, "right")
+wfp$commodity_2 <- trimws(wfp$commodity_2, "both")
+
+write_rds(wfp, "/home/agar/Documents/WFP/WFP")
+
+# unique(wfp$currency[wfp$commodity=="Exchange rate"])
+# 
+# sort(unique(wfp$commodity))
+# sort(unique(wfp$currency))
+# sort(unique(curr$name))
+```
+
